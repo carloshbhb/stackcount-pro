@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Camera, History, Zap, BarChart3, Settings, CheckCircle2, PlusCircle, FileText, X } from 'lucide-react';
+import { Camera, Zap, Settings, CheckCircle2, FileText, X, ChevronRight } from 'lucide-react';
 
 export default function StackCountApp() {
   const [isScanning, setIsScanning] = useState(false);
@@ -11,7 +11,7 @@ export default function StackCountApp() {
   const [loading, setLoading] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [itemName, setItemName] = useState("Publicação Padrão");
+  const [itemName, setItemName] = useState("Revista Padrão");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,14 +20,14 @@ export default function StackCountApp() {
     setIsScanning(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: 1280, height: 720 }
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => videoRef.current?.play();
       }
     } catch (err) {
-      alert("Câmera bloqueada ou sem HTTPS.");
+      alert("Acesso à câmera negado.");
       setIsScanning(false);
     }
   };
@@ -43,13 +43,14 @@ export default function StackCountApp() {
 
     canvasRef.current.toBlob((blob) => {
       setCapturedBlob(blob);
-      const mockIA = Math.floor(Math.random() * 15) + 1; // Simulação inicial
-      setCount(mockIA);
-      setRealCount(mockIA);
+      // Aqui simulamos a IA. No futuro, esse valor virá da análise 3D.
+      const simulatedIA = Math.floor(Math.random() * 10) + 1;
+      setCount(simulatedIA);
+      setRealCount(simulatedIA);
       setLoading(false);
       setShowCalibration(true);
       stopCamera();
-    }, 'image/jpeg', 0.9);
+    }, 'image/jpeg', 0.95);
   };
 
   const stopCamera = () => {
@@ -63,7 +64,7 @@ export default function StackCountApp() {
     setLoading(true);
 
     const formData = new FormData();
-    formData.append('image', capturedBlob, 'train.jpg');
+    formData.append('image', capturedBlob, 'capture.jpg');
     formData.append('item_name', itemName);
     formData.append('ia_count', count?.toString() || "0");
     formData.append('real_count', realCount.toString());
@@ -74,84 +75,104 @@ export default function StackCountApp() {
         body: formData,
       });
       if (res.ok) {
-        alert("Dados salvos! IA em treinamento.");
+        alert("Calibragem salva com sucesso!");
         setShowCalibration(false);
       }
     } catch (e) {
-      alert("Erro ao enviar para Railway.");
+      alert("Erro ao salvar no servidor.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#07070f] text-white flex flex-col font-sans">
+    <div className="min-h-screen bg-[#07070f] text-white flex flex-col font-sans overflow-hidden">
       <canvas ref={canvasRef} className="hidden" />
       
-      <header className="p-6 flex justify-between items-center border-b border-white/10 sticky top-0 bg-[#07070f]/80 backdrop-blur-md z-50">
-        <div className="flex items-center gap-2">
-          <Zap className="text-orange-500 fill-current w-6 h-6" />
-          <h1 className="text-xl font-black italic tracking-tighter">STACKCOUNT PRO</h1>
+      {/* Header Estilizado */}
+      <header className="p-6 flex justify-between items-center bg-black/40 backdrop-blur-md border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-orange-500 rounded-xl shadow-lg shadow-orange-500/20">
+            <Zap className="w-5 h-5 fill-current" />
+          </div>
+          <span className="font-black italic tracking-tighter text-lg">STACKCOUNT <span className="text-orange-500 italic">PRO</span></span>
         </div>
-        <button onClick={() => setShowSettings(!showSettings)} className="p-2 bg-white/5 rounded-full">
-          {showSettings ? <X /> : <Settings className="text-gray-400" />}
+        <button onClick={() => setShowSettings(!showSettings)} className="p-2 bg-white/5 rounded-full border border-white/10">
+          {showSettings ? <X className="w-5 h-5" /> : <Settings className="w-5 h-5 text-gray-400" />}
         </button>
       </header>
 
-      <main className="flex-1 p-6 flex flex-col max-w-md mx-auto w-full">
+      <main className="flex-1 p-6 flex flex-col max-w-lg mx-auto w-full">
         {showSettings && (
-          <div className="mb-6 space-y-3 animate-in slide-in-from-top">
-            <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl">
-              <label className="text-[10px] font-black text-orange-500 uppercase">Item Atual</label>
+          <div className="mb-6 p-5 bg-white/5 border border-white/10 rounded-[2rem] space-y-4 animate-in fade-in slide-in-from-top-4">
+            <div>
+              <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Item em Foco</label>
               <input 
                 value={itemName} 
                 onChange={(e) => setItemName(e.target.value)}
-                className="w-full bg-transparent border-b border-white/20 py-2 outline-none font-bold"
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-orange-500 transition-colors"
               />
             </div>
-            <button className="w-full flex items-center gap-3 p-4 bg-white/5 rounded-2xl text-xs font-bold uppercase tracking-widest"><FileText className="text-blue-400" /> Relatório Mensal</button>
+            <button className="w-full flex items-center justify-between p-4 bg-orange-500/10 rounded-xl text-xs font-bold text-orange-500">
+              VER RELATÓRIO MENSAL <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         )}
 
-        <div className="relative flex-1 bg-white/5 rounded-[2.5rem] overflow-hidden border border-white/10">
+        {/* Camera/Result Container */}
+        <div className="relative flex-1 bg-white/5 rounded-[3rem] overflow-hidden border border-white/10 shadow-2xl">
           {!isScanning && !showCalibration ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-10">
-              <div className="w-20 h-20 bg-orange-500/10 rounded-full flex items-center justify-center mb-6">
-                <Camera className="text-orange-500 w-10 h-10" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center">
+              <div className="w-24 h-24 bg-orange-500/10 rounded-full flex items-center justify-center mb-8 border border-orange-500/20">
+                <Camera className="w-10 h-10 text-orange-500" />
               </div>
-              <button onClick={startCamera} className="w-full bg-orange-500 py-5 rounded-2xl font-black text-xl shadow-lg shadow-orange-500/20 active:scale-95 transition-all">
+              <h2 className="text-3xl font-black mb-4 tracking-tight">PRONTO?</h2>
+              <p className="text-gray-500 text-sm mb-10">IA treinada para contagem volumétrica lateral.</p>
+              <button onClick={startCamera} className="w-full bg-orange-500 py-5 rounded-2xl font-black text-xl shadow-xl shadow-orange-500/30 active:scale-95 transition-all">
                 ABRIR SCANNER
               </button>
             </div>
           ) : isScanning ? (
             <>
               <video ref={videoRef} playsInline autoPlay muted className="w-full h-full object-cover" />
-              <div className="absolute inset-0 border-2 border-orange-500/30 m-12 rounded-3xl pointer-events-none" />
-              <button onClick={handleCapture} className="absolute bottom-10 left-10 right-10 bg-white text-black py-5 rounded-2xl font-black text-xl active:scale-95 transition-all">
-                CONTAR {itemName.toUpperCase()}
-              </button>
+              <div className="absolute inset-0 border-[4px] border-orange-500/20 m-10 rounded-[2rem] pointer-events-none" />
+              <div className="absolute bottom-10 left-10 right-10">
+                <button onClick={handleCapture} className="w-full bg-white text-black py-5 rounded-2xl font-black text-xl shadow-2xl">
+                  {loading ? "PROCESSANDO..." : "CAPTURAR AGORA"}
+                </button>
+              </div>
             </>
           ) : showCalibration ? (
-            <div className="absolute inset-0 bg-black flex flex-col items-center justify-center p-8 animate-in zoom-in">
-              <h2 className="text-gray-500 font-bold mb-2 uppercase tracking-widest">IA Sugeriu: {count}</h2>
-              <div className="flex items-center gap-8 mb-12">
-                <button onClick={() => setRealCount(Math.max(0, realCount - 1))} className="text-5xl font-light">-</button>
-                <span className="text-8xl font-black text-orange-500">{realCount}</span>
-                <button onClick={() => setRealCount(realCount + 1)} className="text-5xl font-light">+</button>
+            <div className="absolute inset-0 bg-[#07070f] flex flex-col items-center justify-center p-10">
+              <span className="text-orange-500 font-black text-[10px] tracking-[0.4em] uppercase mb-4">Validando IA</span>
+              <h2 className="text-gray-500 font-bold mb-8">IA SUGERIU: {count}</h2>
+              
+              <div className="flex items-center gap-10 mb-16">
+                <button onClick={() => setRealCount(Math.max(0, realCount - 1))} className="text-6xl font-light text-gray-600">-</button>
+                <span className="text-9xl font-black text-white">{realCount}</span>
+                <button onClick={() => setRealCount(realCount + 1)} className="text-6xl font-light text-gray-600">+</button>
               </div>
-              <button onClick={saveFeedback} disabled={loading} className="w-full bg-green-500 py-5 rounded-2xl font-black text-xl flex items-center justify-center gap-3">
+
+              <button onClick={saveFeedback} disabled={loading} className="w-full bg-green-500 py-6 rounded-3xl font-black text-xl shadow-lg shadow-green-500/20 flex items-center justify-center gap-4 transition-all active:scale-95">
                 <CheckCircle2 /> {loading ? "SALVANDO..." : "CONFIRMAR E TREINAR"}
               </button>
+              <button onClick={() => setShowCalibration(false)} className="mt-6 text-gray-600 font-bold text-xs uppercase tracking-widest">Descartar</button>
             </div>
           ) : null}
         </div>
       </main>
 
-      <nav className="p-8 bg-black/40 backdrop-blur-md border-t border-white/5 flex justify-around">
-        <button className="flex flex-col items-center text-orange-500"><Camera /><span className="text-[10px] font-bold mt-1">SCAN</span></button>
-        <button className="flex flex-col items-center text-gray-600"><History /><span className="text-[10px] font-bold mt-1">ESTOQUE</span></button>
-        <button className="flex flex-col items-center text-gray-600"><BarChart3 /><span className="text-[10px] font-bold mt-1">RELATÓRIO</span></button>
-      </nav>
+      {/* Nav Bar Estilizada */}
+      <footer className="p-8 bg-black/60 backdrop-blur-2xl border-t border-white/5 flex justify-around items-center">
+        <button className="flex flex-col items-center gap-2 text-orange-500">
+          <Camera className="w-6 h-6" />
+          <span className="text-[10px] font-black uppercase tracking-widest">Scan</span>
+        </button>
+        <button className="flex flex-col items-center gap-2 text-gray-600">
+          <FileText className="w-6 h-6" />
+          <span className="text-[10px] font-black uppercase tracking-widest">Estoque</span>
+        </button>
+      </footer>
     </div>
   );
 }
