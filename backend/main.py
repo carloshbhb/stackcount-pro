@@ -43,22 +43,27 @@ def init_db():
 
 init_db()
 
+@app.get("/")
+async def root():
+    return {"status": "IA Online", "model": "Gemini 1.5 Flash"}
+
 @app.post("/predict")
 async def predict_count(image: UploadFile = File(...)):
-    # Lê a imagem para o formato que o Gemini entende
+    # Lê a imagem
     img_content = await image.read()
     img = Image.open(io.BytesIO(img_content))
     
-    # Prompt específico para contagem lateral
-    prompt = "Analisa esta imagem lateral de uma pilha de publicações. Conta exatamente quantos itens (revistas/livros) existem na pilha. Responde APENAS com o número inteiro."
+    # Prompt otimizado
+    prompt = "Conte quantas revistas ou livros existem nesta pilha lateral. Responda apenas com o número."
     
-    try {
+    # AQUI ESTAVA O ERRO - CORRIGIDO PARA SINTAXE PYTHON:
+    try:
         response = model.generate_content([prompt, img])
-        # Limpa a resposta para garantir que temos apenas um número
-        count_str = response.text.strip().split()[0]
-        ia_count = int(''.join(filter(str.isdigit, count_str)))
-    } except Exception as e:
-        print(f"Erro na IA: {e}")
+        # Extrai apenas os dígitos da resposta
+        count_str = "".join(filter(str.isdigit, response.text))
+        ia_count = int(count_str) if count_str else 0
+    except Exception as e:
+        print(f"Erro na chamada da API: {e}")
         ia_count = 0
 
     return {"ia_count": ia_count}
@@ -71,6 +76,7 @@ async def train_ia(
     real_count: int = Form(...)
 ):
     bias = real_count - ia_count
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -80,10 +86,12 @@ async def train_ia(
     conn.commit()
     conn.close()
 
-    # Salva imagem para o dataset de treino contínuo
-    path = f"dataset_treino/{item_name.replace(' ', '_')}"
-    os.makedirs(path, exist_ok=True)
-    with open(f"{path}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg", "wb") as buffer:
+    # Salva foto para retreino futuro
+    folder = f"dataset/{item_name.replace(' ', '_')}"
+    os.makedirs(folder, exist_ok=True)
+    file_path = f"{folder}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    
+    with open(file_path, "wb") as buffer:
         image.file.seek(0)
         shutil.copyfileobj(image.file, buffer)
 
@@ -96,7 +104,7 @@ async def get_report():
     cursor.execute("SELECT item_name, AVG(bias), COUNT(*) FROM inventory GROUP BY item_name")
     stats = cursor.fetchall()
     conn.close()
-    return [{"item": s[0], "erro_medio": round(s[1], 2), "amostras": s[2]} for s in stats]
+    return [{"item": s[0], "erro_medio": round(s[1], 2), "total_scans": s[2]} for s in stats]
 
 if __name__ == "__main__":
     import uvicorn
