@@ -14,8 +14,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Banco de Dados e Pastas de Treino
 DB_PATH = "stackcount.db"
-TRAINING_DIR = "training_data"
+TRAINING_DIR = "dataset_inteligente"
 os.makedirs(TRAINING_DIR, exist_ok=True)
 
 def init_db():
@@ -42,30 +43,26 @@ async def train_ia(
     ia_count: int = Form(...),
     real_count: int = Form(...)
 ):
-    # Salva no Banco para Relatórios Mensais
+    # 1. Registro para Inventário
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO inventory (item_name, ia_count, real_count, date) VALUES (?, ?, ?, ?)",
-        (item_name, ia_count, real_count, datetime.now())
-    )
+    cursor.execute("INSERT INTO inventory (item_name, ia_count, real_count, date) VALUES (?, ?, ?, ?)",
+                   (item_name, ia_count, real_count, datetime.now()))
     conn.commit()
     conn.close()
 
-    # Organiza fotos para Treinamento Contínuo
-    # Fotos onde a IA errou são as mais valiosas
-    error_margin = abs(real_count - ia_count)
-    folder = "errors" if error_margin > 0 else "correct"
-    path = os.path.join(TRAINING_DIR, folder, str(real_count))
-    os.makedirs(path, exist_ok=True)
+    # 2. Organização para Few-Shot Learning (Ouro para a IA)
+    # Criamos pastas baseadas na quantidade real para a IA comparar padrões
+    category_dir = os.path.join(TRAINING_DIR, item_name.replace(" ", "_").lower(), str(real_count))
+    os.makedirs(category_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = os.path.join(path, f"ia{ia_count}_real{real_count}_{timestamp}.jpg")
+    filename = f"ref_{real_count}_ia_{ia_count}_{timestamp}.jpg"
     
-    with open(file_path, "wb") as buffer:
+    with open(os.path.join(category_dir, filename), "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
 
-    return {"status": "success", "improvement_logged": error_margin > 0}
+    return {"status": "success", "data_stored": True}
 
 @app.get("/report")
 async def get_report():
@@ -74,10 +71,9 @@ async def get_report():
     cursor.execute("SELECT item_name, SUM(real_count), COUNT(*) FROM inventory GROUP BY item_name")
     data = cursor.fetchall()
     conn.close()
-    return [{"item": d[0], "total": d[1], "contagens": d[2]} for d in data]
+    return [{"item": d[0], "total": d[1], "sessoes": d[2]} for d in data]
 
 if __name__ == "__main__":
     import uvicorn
-    import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
