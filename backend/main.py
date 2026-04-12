@@ -4,7 +4,7 @@ import os
 import sqlite3
 from datetime import datetime
 import shutil
-from google import genai  # Nova SDK
+import google.generativeai as genai
 from PIL import Image
 import io
 import re
@@ -19,10 +19,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- CONFIGURAÇÃO CLIENTE GEMINI (NOVA SDK) ---
-# Certifique-se que a variável na Railway se chama GEMINI_API_KEY ou altere aqui
-api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-client = genai.Client(api_key=api_key)
+# --- CONFIGURAÇÃO GEMINI (SDK ESTÁVEL) ---
+# Ele tentará pegar qualquer uma das duas variáveis que você definiu
+API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- BANCO DE DADOS ---
 DB_PATH = "stackcount.db"
@@ -49,36 +51,35 @@ init_db()
 
 @app.get("/")
 async def root():
-    return {"status": "Online", "model": "Gemini 3 Flash Ready"}
+    return {"status": "Online", "model": "Gemini 1.5 Flash Stable"}
 
 @app.post("/predict")
 async def predict_count(image: UploadFile = File(...)):
     try:
-        # Lê os bytes da imagem
-        img_bytes = await image.read()
-        
-        # Converte para objeto PIL para garantir que é uma imagem válida
-        img = Image.open(io.BytesIO(img_bytes))
-        
-        prompt = "Analise a lateral desta pilha. Quantas unidades existem? Responda APENAS o número puro."
-        
-        # Chamada usando a nova SDK
-        response = client.models.generate_content(
-            model="gemini-2.0-flash", # Use 2.0 ou 1.5 caso o 3 ainda esteja instável na sua região
-            contents=[prompt, img]
-        )
-        
-        raw_text = response.text.strip()
-        print(f"DEBUG: Resposta da IA: {raw_text}")
+        if not API_KEY:
+            return {"ia_count": 0, "error": "API Key ausente na Railway."}
 
-        # Extração de segurança para não retornar 0 por causa de texto extra
+        # Lê a imagem
+        img_content = await image.read()
+        img = Image.open(io.BytesIO(img_content))
+        
+        # Prompt direto
+        prompt = "Conte as camadas/objetos nesta pilha lateral. Responda apenas o número."
+        
+        # Chamada estável
+        response = model.generate_content([prompt, img])
+        raw_text = response.text.strip()
+        
+        print(f"DEBUG: IA respondeu: {raw_text}")
+
+        # REGEX: Extrai apenas números (evita o erro do '0')
         numeros = re.findall(r'\d+', raw_text)
         ia_count = int(numeros[0]) if numeros else 0
             
         return {"ia_count": ia_count}
 
     except Exception as e:
-        print(f"ERRO NO PREDICT: {str(e)}")
+        print(f"ERRO: {str(e)}")
         return {"ia_count": 0, "error": str(e)}
 
 @app.post("/train")
