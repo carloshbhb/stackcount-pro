@@ -5,21 +5,22 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Instala dependências do sistema
+# Instala as dependências de sistema atualizadas para processamento de imagem
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Usamos o caractere curinga (*) para garantir que ele encontre o arquivo 
-# mesmo se houver erro de caminho ou contexto
+# Copia o requirements usando o curinga para garantir que ele encontre
 COPY requirements* /app/
 
+# Instala as bibliotecas Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia todo o conteúdo da pasta onde o Dockerfile está para dentro de /app
+# Copia o restante dos arquivos do backend
 COPY . /app
 
 EXPOSE 8000
 
+# Comando para iniciar a API
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
