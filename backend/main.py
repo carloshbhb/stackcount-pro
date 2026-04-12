@@ -4,6 +4,9 @@ import os
 import sqlite3
 from datetime import datetime
 import shutil
+import google.generativeai as genai
+from PIL import Image
+import io
 
 app = FastAPI()
 
@@ -14,13 +17,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuração do Banco de Dados
+# Configuração Gemini
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Banco de Dados
 DB_PATH = "stackcount.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Armazena o item, o que a IA achou, o que o humano corrigiu e a diferença (bias)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,9 +43,25 @@ def init_db():
 
 init_db()
 
-@app.get("/")
-async def root():
-    return {"status": "IA Ready", "learning_mode": "Active"}
+@app.post("/predict")
+async def predict_count(image: UploadFile = File(...)):
+    # Lê a imagem para o formato que o Gemini entende
+    img_content = await image.read()
+    img = Image.open(io.BytesIO(img_content))
+    
+    # Prompt específico para contagem lateral
+    prompt = "Analisa esta imagem lateral de uma pilha de publicações. Conta exatamente quantos itens (revistas/livros) existem na pilha. Responde APENAS com o número inteiro."
+    
+    try {
+        response = model.generate_content([prompt, img])
+        # Limpa a resposta para garantir que temos apenas um número
+        count_str = response.text.strip().split()[0]
+        ia_count = int(''.join(filter(str.isdigit, count_str)))
+    } except Exception as e:
+        print(f"Erro na IA: {e}")
+        ia_count = 0
+
+    return {"ia_count": ia_count}
 
 @app.post("/train")
 async def train_ia(
@@ -47,9 +70,7 @@ async def train_ia(
     ia_count: int = Form(...),
     real_count: int = Form(...)
 ):
-    # O "Aprendizado": calculamos o erro sistemático
     bias = real_count - ia_count
-    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -59,27 +80,23 @@ async def train_ia(
     conn.commit()
     conn.close()
 
-    # Salvando a imagem para retreino visual futuro (manual)
-    # Nota: Se não houver 'Volume' na Railway, isso sumirá no próximo deploy
-    save_path = f"dataset_treino/{item_name.replace(' ', '_')}"
-    os.makedirs(save_path, exist_ok=True)
-    with open(f"{save_path}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg", "wb") as buffer:
+    # Salva imagem para o dataset de treino contínuo
+    path = f"dataset_treino/{item_name.replace(' ', '_')}"
+    os.makedirs(path, exist_ok=True)
+    with open(f"{path}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg", "wb") as buffer:
+        image.file.seek(0)
         shutil.copyfileobj(image.file, buffer)
 
-    return {"status": "learned", "bias_detected": bias}
+    return {"status": "success", "bias": bias}
 
 @app.get("/report")
 async def get_report():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Busca a média de erro por item para ajustar a IA no futuro
-    cursor.execute("""
-        SELECT item_name, AVG(bias) as avg_error, COUNT(*) as samples 
-        FROM inventory GROUP BY item_name
-    """)
+    cursor.execute("SELECT item_name, AVG(bias), COUNT(*) FROM inventory GROUP BY item_name")
     stats = cursor.fetchall()
     conn.close()
-    return [{"item": s[0], "erro_medio": round(s[1], 2), "confianca": s[2]} for s in stats]
+    return [{"item": s[0], "erro_medio": round(s[1], 2), "amostras": s[2]} for s in stats]
 
 if __name__ == "__main__":
     import uvicorn
