@@ -20,3 +20,9 @@ def home():
 async def analyze(file: UploadFile = File(...)):
     # Aqui a lógica de IA que configuramos na Etapa 2 entra em ação
     return {"count": 42, "confidence": 0.95}
+    
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
