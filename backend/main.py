@@ -7,7 +7,6 @@ import shutil
 
 app = FastAPI()
 
-# Configuração de CORS para permitir acesso do Frontend (Vercel)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Caminhos de arquivos
 DB_PATH = "stackcount.db"
 TRAINING_DIR = "training_data"
 os.makedirs(TRAINING_DIR, exist_ok=True)
@@ -23,7 +21,6 @@ os.makedirs(TRAINING_DIR, exist_ok=True)
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Tabela unificada para Inventário e Treinamento
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,18 +35,14 @@ def init_db():
 
 init_db()
 
-@app.get("/")
-async def root():
-    return {"status": "StackCount API Online", "database": "Ready"}
-
 @app.post("/train")
 async def train_ia(
     image: UploadFile = File(...),
-    item_name: str = Form("Publicação Padrão"),
+    item_name: str = Form(...),
     ia_count: int = Form(...),
     real_count: int = Form(...)
 ):
-    # 1. Salva os dados no banco para o Relatório Mensal
+    # Salva no Banco para Relatórios Mensais
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -59,17 +52,20 @@ async def train_ia(
     conn.commit()
     conn.close()
 
-    # 2. Salva a imagem fisicamente para retreino da IA
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Organiza por pasta de quantidade real para facilitar o aprendizado
-    label_dir = os.path.join(TRAINING_DIR, str(real_count))
-    os.makedirs(label_dir, exist_ok=True)
+    # Organiza fotos para Treinamento Contínuo
+    # Fotos onde a IA errou são as mais valiosas
+    error_margin = abs(real_count - ia_count)
+    folder = "errors" if error_margin > 0 else "correct"
+    path = os.path.join(TRAINING_DIR, folder, str(real_count))
+    os.makedirs(path, exist_ok=True)
     
-    file_path = os.path.join(label_dir, f"ia_{ia_count}_ref_{timestamp}.jpg")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(path, f"ia{ia_count}_real{real_count}_{timestamp}.jpg")
+    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
 
-    return {"status": "success", "message": "Feedback registrado para aprendizado contínuo"}
+    return {"status": "success", "improvement_logged": error_margin > 0}
 
 @app.get("/report")
 async def get_report():
@@ -78,9 +74,10 @@ async def get_report():
     cursor.execute("SELECT item_name, SUM(real_count), COUNT(*) FROM inventory GROUP BY item_name")
     data = cursor.fetchall()
     conn.close()
-    return [{"item": d[0], "total_unidades": d[1], "contagens_realizadas": d[2]} for d in data]
+    return [{"item": d[0], "total": d[1], "contagens": d[2]} for d in data]
 
 if __name__ == "__main__":
     import uvicorn
+    import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
