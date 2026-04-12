@@ -9,7 +9,7 @@ from PIL import Image
 import io
 import re
 
-# 1. Inicialização do App
+# --- INICIALIZAÇÃO DO APP ---
 app = FastAPI()
 
 app.add_middleware(
@@ -19,14 +19,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Configuração da IA (Gemini)
+# --- CONFIGURAÇÃO DA IA (GEMINI) ---
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
-    # Usamos o modelo Flash por ser mais rápido para contagem
     model = genai.GenerativeModel('gemini-1.5-flash')
 
-# 3. Banco de Dados
+# --- BANCO DE DADOS ---
 DB_PATH = "stackcount.db"
 
 def init_db():
@@ -47,7 +46,8 @@ def init_db():
 
 init_db()
 
-# 4. Rotas do Servidor
+# --- ROTAS ---
+
 @app.get("/")
 async def root():
     return {"status": "Online", "model": "Gemini 1.5 Flash Active"}
@@ -55,42 +55,35 @@ async def root():
 @app.post("/predict")
 async def predict_count(image: UploadFile = File(...)):
     try:
-        # Verifica se a chave de API existe
         if not GOOGLE_API_KEY:
-            return {"ia_count": 0, "error": "GOOGLE_API_KEY não configurada no servidor."}
+            return {"ia_count": 0, "error": "API Key ausente nas variáveis de ambiente."}
 
-        # Lê a imagem e converte para PIL
+        # Processamento da imagem
         img_content = await image.read()
         img = Image.open(io.BytesIO(img_content))
         
-        # Prompt otimizado: Instruímos a IA a ser curta e grossa
-        prompt = """
-        Analise esta imagem lateral de uma pilha. 
-        Conte quantos itens (revistas/livros) estão empilhados. 
-        Responda APENAS o número. 
-        Se não tiver certeza, forneça sua melhor estimativa numérica.
-        """
+        # Prompt focado em extrair apenas o número
+        prompt = "Analise a pilha lateral na imagem. Quantas unidades existem? Responda APENAS o número puro. Se não souber, estime."
         
-        # Gera o conteúdo
         response = model.generate_content([prompt, img])
         raw_text = response.text.strip()
         
-        # LOG PARA DEPURAÇÃO: Isso aparecerá nos logs da Railway para você ver o que a IA disse
-        print(f"DEBUG - Resposta Bruta do Gemini: {raw_text}")
+        # Log de segurança para você ver na Railway o que a IA está respondendo
+        print(f"DEBUG: Resposta da IA: {raw_text}")
 
-        # Limpeza via Regex: Extrai apenas o primeiro número que encontrar na frase
-        match = re.search(r'\d+', raw_text)
-        if match:
-            ia_count = int(match.group())
+        # REGEX: Busca qualquer número na resposta (evita o erro '0' se a IA falar texto)
+        numeros = re.findall(r'\d+', raw_text)
+        
+        if numeros:
+            ia_count = int(numeros[0])
         else:
-            # Se não encontrar nenhum número, tentamos uma limpeza radical
-            clean_str = "".join(filter(str.isdigit, raw_text))
-            ia_count = int(clean_str) if clean_str else 0
+            print("AVISO: Nenhum número encontrado na resposta da IA.")
+            ia_count = 0
             
         return {"ia_count": ia_count}
 
     except Exception as e:
-        print(f"ERRO CRÍTICO NO PREDICT: {str(e)}")
+        print(f"ERRO NO PREDICT: {str(e)}")
         return {"ia_count": 0, "error": str(e)}
 
 @app.post("/train")
@@ -111,7 +104,7 @@ async def train_ia(
         conn.commit()
         conn.close()
 
-        # Salvando imagem para dataset (Opcional - Útil para retreino futuro)
+        # Opcional: Salvar a imagem para dataset
         folder = "dataset_feedback"
         os.makedirs(folder, exist_ok=True)
         filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{real_count}.jpg"
@@ -119,24 +112,18 @@ async def train_ia(
             image.file.seek(0)
             shutil.copyfileobj(image.file, buffer)
 
-        return {"status": "success", "message": "Feedback registrado"}
+        return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 @app.get("/report")
 async def get_report():
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT item_name, AVG(bias), COUNT(*) 
-            FROM inventory GROUP BY item_name
-        """)
-        stats = cursor.fetchall()
-        conn.close()
-        return [{"item": s[0], "erro_medio": round(s[1], 2), "total_scans": s[2]} for s in stats]
-    except Exception as e:
-        return {"error": str(e)}
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT item_name, AVG(bias), COUNT(*) FROM inventory GROUP BY item_name")
+    stats = cursor.fetchall()
+    conn.close()
+    return [{"item": s[0], "erro_medio": round(s[1], 2), "total": s[2]} for s in stats]
 
 if __name__ == "__main__":
     import uvicorn
